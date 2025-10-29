@@ -509,5 +509,152 @@ async def admin_handle_action(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     except Exception as e:
         logger.error(f"Error in admin_handle_action: {e}")
+        await query.edit_message_text("An internal error occurred during processing.")
+    finally:
+        cursor.close()
+        conn.close()
+        
+    return ConversationHandler.END # End flow if it wasn't an 'accept' action
 
-        await query.edit_message_text("An internal error occurred durin
+async def admin_set_delay_time(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handles the admin's input for the delay time and schedules the prediction release."""
+    delay_str = update.message.text.strip()
+    request_id = context.user_data.get('admin_request_id')
+    admin_id = get_admin_id_from_db()
+    
+    if update.effective_user.id != admin_id:
+        await update.message.reply_text("🚫 Access Denied.")
+        return ConversationHandler.END
+
+    if not request_id:
+        await update.message.reply_text("Session expired. Please restart the admin flow with /admin.")
+        return ConversationHandler.END
+        
+    try:
+        delay_seconds = int(delay_str)
+        if delay_seconds <= 0:
+            raise ValueError("Delay must be positive.")
+    except ValueError:
+        await update.message.reply_text("❌ Invalid input. Please enter a valid number of seconds.")
+        return "AWAITING_DELAY_TIME"
+        
+    release_time = datetime.now() + timedelta(seconds=delay_seconds)
+
+    conn = get_db_connection()
+    if conn:
+        cursor = conn.cursor(dictionary=True)
+        try:
+            # Update the request with status 'ACCEPTED' and scheduled time
+            sql = (
+                "UPDATE payment_requests SET status = 'ACCEPTED', admin_accepted_at = NOW(), prediction_release_time = %s "
+                "WHERE id = %s"
+            )
+            cursor.execute(sql, (release_time, request_id))
+            conn.commit()
+
+            # Fetch user info for job data
+            cursor.execute("SELECT user_id, chat_id, prediction_type FROM payment_requests WHERE id = %s", (request_id,))
+            req_info = cursor.fetchone()
+            
+            if req_info:
+                # Schedule the job to update the status and notify the user
+                job_data = {
+                    'user_id': req_info['user_id'],
+                    'chat_id': req_info['chat_id'],
+                    'prediction_type': req_info['prediction_type']
+                }
+                context.application.job_queue.run_once(
+                    release_prediction, 
+                    delay_seconds, 
+                    data=job_data,
+                    name=f"release_{request_id}"
+                )
+
+                # Notify user that payment is successful
+                await context.bot.send_message(
+                    req_info['user_id'],
+                    f"🎉 **Payment Successful!** 🎉\n\n"
+                    f"Your request for the **{req_info['prediction_type'].replace('_', ' ')}** plan has been approved. "
+                    f"Your prediction will be available after **{delay_seconds // 3600} hours** and **{(delay_seconds % 3600) // 60} minutes**.\n"
+                    "You can check the status or access the prediction by clicking the '🔮 Prediction' button.",
+                    parse_mode='Markdown'
+                )
+
+                # Confirm to admin
+                await update.message.reply_text(
+                    f"✅ **Prediction Scheduled!**\n"
+                    f"Release time set for: `{release_time.strftime('%Y-%m-%d %H:%M:%S')}`\n"
+                    f"User {req_info['user_id']} has been notified."
+                )
+            else:
+                await update.message.reply_text("User information not found. Check database manually.")
+
+        except Exception as e:
+            logger.error(f"Error setting delay time/scheduling job: {e}")
+            await update.message.reply_text("An internal error occurred during scheduling.")
+        finally:
+            cursor.close()
+            conn.close()
+
+    context.user_data.clear()
+    return ConversationHandler.END
+
+
+# --- 8. MAIN BOT SETUP ---
+
+def main():
+    """Start the bot."""
+    # Fetch admin ID from DB for live comparison in admin_command
+    global ADMIN_ID
+    ADMIN_ID = get_admin_id_from_db()
+
+    application = ApplicationBuilder().token(BOT_TOKEN).build()
+
+    # Conversation Handler for user payment flow
+    user_conv_handler = ConversationHandler(
+        entry_points=[
+            CommandHandler("start", start_command),
+            CallbackQueryHandler(handle_main_menu_buttons, pattern="^(link_register|prediction_menu|main_menu)$")
+        ],
+        states={
+            PREDICTION_CHOICE: [
+                CallbackQueryHandler(select_prediction_plan, pattern="^buy_"),
+                CallbackQueryHandler(payment_sended, pattern="^payment_sended$"),
+                CallbackQueryHandler(handle_main_menu_buttons, pattern="^main_menu$"),
+            ],
+            AWAITING_UTR: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_utr_input)
+            ]
+        },
+        fallbacks=[CommandHandler("start", start_command),],
+        # Only check the /start command if already in conversation
+        allow_reentry=True 
+    )
+    
+    # Conversation Handler for admin delay setting
+    admin_conv_handler = ConversationHandler(
+        entry_points=[CallbackQueryHandler(admin_handle_action, pattern="^admin_accept_")],
+        states={
+            "AWAITING_DELAY_TIME": [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, admin_set_delay_time)
+            ]
+        },
+        fallbacks=[CommandHandler("admin", admin_command)],
+        allow_reentry=False 
+    )
+
+
+    # Add Handlers
+    application.add_handler(user_conv_handler)
+    application.add_handler(admin_conv_handler)
+    application.add_handler(CommandHandler("admin", admin_command))
+
+    # Run the bot
+    print("Bot is running...")
+    application.run_polling(allowed_updates=Update.ALL_TYPES)
+
+
+if __name__ == "__main__":
+    main()
+    
+
