@@ -26,4 +26,5 @@ CREATE TABLE bot_settings (
 );
 
 -- Insert the admin user ID (REPLACE 123456789 WITH YOUR ACTUAL TELEGRAM USER ID)
-INSERT INTO bot_settings (setting_key, setting_value) VALUES ('ADMIN_ID', '@grishasoko');
+INSERT INTO bot_settings (setting_key, setting_value) VALUES ('ADMIN_ID', '6239774927');
+
