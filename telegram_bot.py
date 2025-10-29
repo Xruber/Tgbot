@@ -20,7 +20,7 @@ import mysql.connector
 
 # !!! IMPORTANT: Replace with your actual credentials and IDs !!!
 BOT_TOKEN = "8482042827:AAGUtsTJuJslBETa4o11OHiplainokd5BR8"
-ADMIN_ID = grishasoko  # Replace with the User ID of the single admin (e.g., 123456789)
+ADMIN_ID = "@grishasoko"  # Replace with the User ID of the single admin (e.g., 123456789)
 
 # MySQL Connection Details
 DB_CONFIG = {
@@ -657,4 +657,5 @@ def main():
 if __name__ == "__main__":
     main()
     
+
 
