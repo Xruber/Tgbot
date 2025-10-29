@@ -20,7 +20,7 @@ import mysql.connector
 
 # !!! IMPORTANT: Replace with your actual credentials and IDs !!!
 BOT_TOKEN = "8482042827:AAGUtsTJuJslBETa4o11OHiplainokd5BR8"
-ADMIN_ID = @grishasoko  # Replace with the User ID of the single admin (e.g., 123456789)
+ADMIN_ID = grishasoko  # Replace with the User ID of the single admin (e.g., 123456789)
 
 # MySQL Connection Details
 DB_CONFIG = {
@@ -509,4 +509,5 @@ async def admin_handle_action(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     except Exception as e:
         logger.error(f"Error in admin_handle_action: {e}")
+
         await query.edit_message_text("An internal error occurred durin
